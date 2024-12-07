@@ -195,10 +195,17 @@ namespace GostTest
                 var encryptor = kuzya.CreateEncryptor(key, iv);
                 byte[] output = new byte[64];
 
-                encryptor.TransformBlock(plain, 0, 64, output, 0);
+                encryptor.TransformBlock(plain, 0, 32, output, 0);
+                encryptor.TransformBlock(plain, 32, 32, output, 32);
                 byte[] last = encryptor.TransformFinalBlock(plain, 0, 0);
 
                 byte[] res = [.. output, .. last];
+                CollectionAssert.AreEqual(cipher, res);
+
+                encryptor.TransformBlock(plain, 0, 64, output, 0);
+                last = encryptor.TransformFinalBlock(plain, 0, 0);
+
+                res = [.. output, .. last];
                 CollectionAssert.AreEqual(cipher, res);
             }
         }
@@ -212,8 +219,16 @@ namespace GostTest
                 var decryptor = kuzya.CreateDecryptor(key, iv);
                 byte[] output = new byte[64];
 
-                decryptor.TransformBlock(cipher, 0, cipher.Length, output, 0);
+                int outLen = decryptor.TransformBlock(cipher, 0, cipher.Length - 32, output, 0);
+                decryptor.TransformBlock(cipher, cipher.Length - 32, 32, output, outLen);
                 byte[] last = decryptor.TransformFinalBlock(cipher, 0, 0);
+
+                CollectionAssert.AreEqual(output, plain);
+
+                output = new byte[64];
+
+                decryptor.TransformBlock(cipher, 0, cipher.Length, output, 0);
+                last = decryptor.TransformFinalBlock(cipher, 0, 0);
 
                 CollectionAssert.AreEqual(output, plain);
             }

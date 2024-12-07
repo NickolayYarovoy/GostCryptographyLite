@@ -217,7 +217,10 @@ namespace GostCryptographyLite
             if (GostCipherMode == GostCipherMode.CTR)
             {
                 if (inputCount == 0)
+                {
+                    startIv!.CopyTo(iv!, 0);
                     return [];
+                }
 
                 Vector128<byte> block;
                 byte[] outputBuffer = new byte[inputCount];

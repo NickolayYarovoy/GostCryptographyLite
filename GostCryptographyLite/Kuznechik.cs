@@ -81,8 +81,7 @@ namespace GostCryptographyLite
 
         public override void GenerateIV()
         {
-            IV = new byte[BlockSize / 8];
-            RandomNumberGenerator.Fill(IV);
+            IV = RandomNumberGenerator.GetBytes(16);
 
             if (Mode == GostCipherMode.CTR)
                 for (int i = 8; i < 16; i++)
@@ -91,8 +90,7 @@ namespace GostCryptographyLite
 
         public override void GenerateKey()
         {
-            Key = new byte[KeySize / 8];
-            RandomNumberGenerator.Fill(Key);
+            Key = RandomNumberGenerator.GetBytes(32);
         }
     }
 }
