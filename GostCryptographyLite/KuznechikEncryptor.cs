@@ -3,19 +3,34 @@ using System.Security.Cryptography;
 
 namespace GostCryptographyLite
 {
+    /// <summary>
+    /// A class implementing Kuznechik encryptors
+    /// </summary>
     internal sealed class KuznechikEncryptor : ICryptoTransform
     {
-
-
         /// <summary>
-        /// Размер блока в байтах
+        /// Block size in bytes
         /// </summary>
         private const int BlockSizeBytes = 16;
-
+        /// <summary>
+        /// Cipher mode
+        /// </summary>
         private GostCipherMode GostCipherMode;
+        /// <summary>
+        /// Padding mode
+        /// </summary>
         private PaddingMode paddingMode;
+        /// <summary>
+        /// The sheduled masked keys used for encrypting the data block.
+        /// </summary>
         private KuznechikKeyData key;
+        /// <summary>
+        /// Current IV
+        /// </summary>
         private byte[]? iv;
+        /// <summary>
+        /// IV of clear instance
+        /// </summary>
         private byte[]? startIv;
 
         public bool CanReuseTransform => true;
@@ -26,38 +41,40 @@ namespace GostCryptographyLite
 
         public int OutputBlockSize => BlockSizeBytes;
 
+
         /// <summary>
-        /// Матрица для преобразования 16 тактов РСЛОС
+        /// 16 round LFSR Matrix
         /// </summary>
         private byte[,] LMatrix { get; set; }
+        /// <summary>
+        /// OpenSSL compability mode (true - OpenSSL compability, false - GOST compability)
+        /// </summary>
         private bool OpenSslCompability;
-        private static readonly Vector128<byte> mask = Vector128.Create((byte)15, (byte)14, (byte)13, (byte)12, (byte)11, (byte)10, (byte)9, (byte)8,
-                                                (byte)7, (byte)6, (byte)5, (byte)4, (byte)3, (byte)2, (byte)1, (byte)0);
 
 
 
         public KuznechikEncryptor(byte[] Key, byte[]? IV, GostCipherMode GostCipherMode, PaddingMode paddingMode, bool openSslCompability)
         {
             if (Key == null)
-                throw new ArgumentNullException("Ключ должен быть инициализирован");
+                throw new ArgumentNullException("The key must be initialized");
 
             if (Key.Length != 32)
-                throw new ArgumentException("Размер ключа должен быть равен 256 битам");
+                throw new ArgumentException("The key size must be 256 bit");
 
-            if (GostCipherMode ==  GostCipherMode.CTS)
-                throw new ArgumentException("Данный режим работы не поддерживается");
+            if (GostCipherMode == GostCipherMode.CTS)
+                throw new ArgumentException("The selected algorithm does not support this cipher mode.");
 
             if (paddingMode != PaddingMode.PKCS7)
-                throw new ArgumentException("Данный режим заполнения не поддерживается");
+                throw new ArgumentException("The selected algorithm does not support this padding mode.");
 
             iv = null;
 
             if (GostCipherMode == GostCipherMode.CBC || GostCipherMode == GostCipherMode.CFB || GostCipherMode == GostCipherMode.OFB)
             {
                 if (IV == null || IV.Length == 0)
-                    throw new ArgumentNullException("При работе в режимах CTR, CBC, OFB и CFB необходим вектор инициализации");
+                    throw new ArgumentNullException("An initialization vector is required when operating in CTR, CBC, OFB, and CFB modes");
                 if (IV.Length % 16 != 0)
-                    throw new ArgumentNullException("Размер вектора инициализации в режимах CBC, OFB и CFB должен быть кратен 128 битам");
+                    throw new ArgumentNullException("The IV size must be a multiple of 128");
 
                 if (openSslCompability)
                     iv = IV.ToArray();
@@ -74,14 +91,14 @@ namespace GostCryptographyLite
             if(GostCipherMode == GostCipherMode.CTR)
             {
                 if (IV == null || IV.Length == 0)
-                    throw new ArgumentNullException("При работе в режимах CTR, CBC, OFB и CFB необходим вектор инициализации");
+                    throw new ArgumentNullException("An initialization vector is required when operating in CTR, CBC, OFB, and CFB modes");
                 if (IV.Length != 8 && IV.Length != 16)
-                    throw new ArgumentNullException("Размер вектора инициализации в режиме CTR должен составлять 64 бита");
+                    throw new ArgumentNullException("The IV size must be 64 bits");
 
-                if(IV.Length == 16)
-                    for(int i = 8; i < 16; i++)
+                if (IV.Length == 16)
+                    for (int i = 8; i < 16; i++)
                         if (IV[i] != 0)
-                         throw new ArgumentNullException("Размер вектора инициализации в режиме CTR должен составлять 64 бита");
+                            throw new ArgumentNullException("The IV size must be 64 bits");
 
                 iv = new byte[16];
 
@@ -102,17 +119,15 @@ namespace GostCryptographyLite
 
             OpenSslCompability = openSslCompability;
 
-            // Заполнение начальной матрицы данными из стандарта
             LMatrix = new byte[BlockSizeBytes, BlockSizeBytes];
 
-            // Получение итоговой матриы
-            KuzhnechicHelpFunctions.GenerateMatrix(LMatrix);
+            KuznechikHelpFunctions.GenerateMatrix(LMatrix);
 
             
             if (OpenSslCompability)
-                key = KuzhnechicHelpFunctions.ScheduleKeys(Key);
+                key = KuznechikHelpFunctions.ScheduleKeys(Key);
             else
-                key = KuzhnechicHelpFunctions.ScheduleKeys(Key.Reverse().ToArray());
+                key = KuznechikHelpFunctions.ScheduleKeys(Key.Reverse().ToArray());
         }
 
         public void Dispose()
@@ -122,7 +137,7 @@ namespace GostCryptographyLite
         public int TransformBlock(byte[] inputBuffer, int inputOffset, int inputCount, byte[] outputBuffer, int outputOffset)
         {
             if (!(inputCount % BlockSizeBytes == 0))
-                throw new ArgumentException("Некорректный размер блока.");
+                throw new ArgumentException("Incorrect block size");
             Vector128<byte> block;
             Vector128<byte> temp;
             if (GostCipherMode == GostCipherMode.CTR)
@@ -155,7 +170,7 @@ namespace GostCryptographyLite
                             if (OpenSslCompability)
                                 block = Vector128.Create(iv!);
                             else
-                                block = Vector128.Shuffle(Vector128.Create(iv!), mask);
+                                block = Vector128.Shuffle(Vector128.Create(iv!), KuznechikHelpFunctions.mask);
 
                         block = EncryptBlock(block);
 
@@ -176,7 +191,7 @@ namespace GostCryptographyLite
                         if (OpenSslCompability)
                             block.CopyTo(iv!, iv!.Length - 16);
                         else
-                             Vector128.Shuffle(block, mask).CopyTo(iv!, iv!.Length - 16);
+                             Vector128.Shuffle(block, KuznechikHelpFunctions.mask).CopyTo(iv!, iv!.Length - 16);
                     }
                     else
                     {
@@ -187,7 +202,7 @@ namespace GostCryptographyLite
                             if (OpenSslCompability)
                                 temp = Vector128.Create(iv!);
                             else
-                                temp = Vector128.Shuffle(Vector128.Create(iv!), mask);
+                                temp = Vector128.Shuffle(Vector128.Create(iv!), KuznechikHelpFunctions.mask);
 
                             block ^= temp;
                         }
@@ -200,7 +215,7 @@ namespace GostCryptographyLite
                             if (OpenSslCompability)
                                 block.CopyTo(iv!, iv!.Length - 16);
                             else
-                                Vector128.Shuffle(block, mask).CopyTo(iv!, iv!.Length - 16);
+                                Vector128.Shuffle(block, KuznechikHelpFunctions.mask).CopyTo(iv!, iv!.Length - 16);
                         }
 
                         block.CopyTo(outputBuffer, outputOffset + i);
@@ -258,10 +273,10 @@ namespace GostCryptographyLite
         }
 
         /// <summary>
-        /// Метод шифрования одного блока данных
+        /// Method for encrypting a single block of data
         /// </summary>
-        /// <param name="block">Шифруемый блок даннных</param>
-        /// <returns></returns>
+        /// <param name="block">Encrypting block of data</param>
+        /// <returns>Encrypted block</returns>
         private Vector128<byte> EncryptBlock(Vector128<byte> block)
         {
             Vector128<byte> num;
@@ -271,19 +286,19 @@ namespace GostCryptographyLite
                     num = block;
                 else
                 {
-                    num = Vector128.Shuffle(block, mask);
+                    num = Vector128.Shuffle(block, KuznechikHelpFunctions.mask);
                 }
             }
             else
             {
-                num = Vector128.Shuffle(block, mask);
+                num = Vector128.Shuffle(block, KuznechikHelpFunctions.mask);
             }
 
             for (int i = 0; i < 9; i++)
             {
                 num ^= key.Key[i];
                 num ^= key.Key[i + 10];
-                num = KuzhnechicHelpFunctions.FastLinearSteps(num);
+                num = KuznechikHelpFunctions.FastLinearSteps(num);
             }
 
             num ^= key.Key[9];
@@ -293,7 +308,7 @@ namespace GostCryptographyLite
                 return num;
             else
             {
-                return Vector128.Shuffle(num, mask);
+                return Vector128.Shuffle(num, KuznechikHelpFunctions.mask);
             }
         }
 

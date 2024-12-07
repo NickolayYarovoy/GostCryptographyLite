@@ -1,16 +1,17 @@
-﻿using Microsoft.Win32;
-using System;
-using System.Collections.Generic;
-using System.Data;
-using System.Linq;
-using System.Runtime.Intrinsics;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Runtime.Intrinsics;
+using System.Security.Cryptography;
 
 namespace GostCryptographyLite
 {
-    internal static class KuzhnechicHelpFunctions
+    /// <summary>
+    ///  Class with auxiliary functions for the Luznechik aglorythm
+    /// </summary>
+    internal static class KuznechikHelpFunctions
     {
+        /// <summary>
+        /// Standard linear feedback shift register with 16 iterations implementation
+        /// </summary>
+        /// <param name="w">Initial register padding</param>
         public static void LinearSteps(byte[] w)
         {
             int i = 0, j = 0;
@@ -26,12 +27,22 @@ namespace GostCryptographyLite
             }
         }
 
+        /// <summary>
+        /// Reversing the byte order in an array if the system uses LittleEndian
+        /// </summary>
+        /// <param name="arr">Input and output array</param>
         public static void ReverceIsLittleEndian(ref byte[] arr)
         {
             if (BitConverter.IsLittleEndian)
                 arr = arr.Reverse().ToArray();
         }
 
+        /// <summary>
+        /// Multiplication operation in Galois field 2^{256}
+        /// </summary>
+        /// <param name="x">First Galois field element</param>
+        /// <param name="y">Second Galois field element</param>
+        /// <returns>Multiplication of x and y</returns>
         public static byte Gf256Muliply(byte x, byte y)
         {
             byte z = 0;
@@ -44,6 +55,11 @@ namespace GostCryptographyLite
             return z;
         }
 
+        /// <summary>
+        /// The operation of squaring a matrix 16*16
+        /// </summary>
+        /// <param name="a">Squaring matrix</param>
+        /// <exception cref="ArgumentException">Matrix size is not 16*16</exception>
         private static void SquareMatrix(byte[,] a)
         {
             if (a.GetLength(0) != 16 || a.GetLength(1) != 16)
@@ -66,6 +82,11 @@ namespace GostCryptographyLite
                 for (j = 0; j < 16; j++) a[i, j] = c[i, j];
         }
 
+        /// <summary>
+        /// Filling the matrix responsible for moving 16 steps in a linear feedback shift register
+        /// </summary>
+        /// <param name="matrix">Filling matrix</param>
+        /// <exception cref="ArgumentException">Register length is not 16 or matrix size is not 16*16</exception>
         public static void GenerateMatrix(byte[,] matrix)
         {
             if (register.Length != 16)
@@ -94,13 +115,20 @@ namespace GostCryptographyLite
             SquareMatrix(matrix);
         }
 
+        /// <summary>
+        /// Key schedule algorithm
+        /// </summary>
+        /// <param name="key">Input key</param>
+        /// <returns>Round keys</returns>
+        /// <exception cref="ArgumentNullException">Key is null</exception>
+        /// <exception cref="ArgumentException">Key size is not 256 bites</exception>
         public static KuznechikKeyData ScheduleKeys(byte[] key)
         {
             if (key == null)
-                throw new ArgumentNullException("Ключ должен быть инициализирован");
+                throw new ArgumentNullException("The key must be initialized");
 
             if (key.Length != 32)
-                throw new ArgumentException("Размер ключа должен быть равен 256 битам");
+                throw new ArgumentException("The key size must be 256 bit");
 
             Vector128<byte>[] Key = new Vector128<byte>[10];
 
@@ -126,6 +154,15 @@ namespace GostCryptographyLite
 
             return new(Key);
         }
+
+        /// <summary>
+        /// Key scheduling algorithm to use fast decryption
+        /// </summary>
+        /// <param name="key">Input key</param>
+        /// <param name="openSslCompability">Is OpenSSL compatible mode used</param>
+        /// <returns>Inverse round keys</returns>
+        /// <exception cref="ArgumentNullException">Key is null</exception>
+        /// <exception cref="ArgumentException">Key size is not 256 bites</exception>
         public static KuznechikKeyData ScheduleInverseKeys(byte[] key, bool openSslCompability)
         {
             if (key == null)
@@ -174,6 +211,14 @@ namespace GostCryptographyLite
             return new(Key);
         }
 
+        /// <summary>
+        /// One round of the Feistel network for key scheduling
+        /// </summary>
+        /// <param name="inKey1">Left part</param>
+        /// <param name="inKey2">Right part</param>
+        /// <param name="outKey1">Left out part</param>
+        /// <param name="outKey2">Right out part</param>
+        /// <param name="iterConst">Iteration constant</param>
         private static void Kuznechik_F(Vector128<byte> inKey1, Vector128<byte> inKey2, out Vector128<byte> outKey1, out Vector128<byte> outKey2, Vector128<byte> iterConst)
         {
             outKey2 = inKey1;
@@ -186,6 +231,12 @@ namespace GostCryptographyLite
             ReverceIsLittleEndian(ref data);
             outKey1 = Vector128.Create(data, 0) ^ inKey2;
         }
+
+        /// <summary>
+        /// Substitution operation on a byte array
+        /// </summary>
+        /// <param name="input">Input byte array</param>
+        /// <returns>Byte array after substitution</returns>
         private static byte[] Kuznechik_S(byte[] input)
         {
             byte[] res = new byte[input.Length];
@@ -194,10 +245,17 @@ namespace GostCryptographyLite
             return res;
         }
 
+        /// <summary>
+        /// Matrix-vector multiplication operation
+        /// </summary>
+        /// <param name="D">Matrix</param>
+        /// <param name="w">Vector</param>
+        /// <returns>Matrix-vector multiplication</returns>
+        /// <exception cref="ArgumentException">Invalid matrix size</exception>
         private static Vector128<byte> MatrixVectorMultiply(byte[,] D, Vector128<byte> w)
         {
             if (D.GetLength(0) != 16 || D.GetLength(1) != 16)
-                throw new ArgumentException("Неверные размеры матрицы и вектора");
+                throw new ArgumentException("Неверные размер матрицы");
 
             int i = 0, j = 0;
             byte[] x = new byte[16];
@@ -211,6 +269,11 @@ namespace GostCryptographyLite
             return Vector128.Create(x);
         }
 
+        /// <summary>
+        /// Implementation of fast round transformation of cipher
+        /// </summary>
+        /// <param name="wIn">Input vector</param>
+        /// <returns>Vector after round</returns>
         public static unsafe Vector128<byte> FastLinearSteps(Vector128<byte> wIn)
         {
             Vector128<byte> temp  = Vector128<byte>.Zero;
@@ -237,6 +300,9 @@ namespace GostCryptographyLite
             return temp;
         }
 
+        /// <summary>
+        /// GOST approved substitution
+        /// </summary>
         public static readonly byte[] gostPi = [
                                     0xFC, 0xEE, 0xDD, 0x11, 0xCF, 0x6E, 0x31, 0x16, 0xFB, 0xC4, 0xFA, 0xDA, 0x23, 0xC5, 0x04, 0x4D,
                                     0xE9, 0x77, 0xF0, 0xDB, 0x93, 0x2E, 0x99, 0xBA, 0x17, 0x36, 0xF1, 0xBB, 0x14, 0xCD, 0x5F, 0xC1,
@@ -257,21 +323,28 @@ namespace GostCryptographyLite
                                ];
 
         /// <summary>
-        /// Значения коэффициентов многослена РСЛОС
+        /// LFSR coefficient values
         /// </summary>
         private static readonly byte[] register = [0x01, 0x94, 0x20, 0x85, 0x10, 0xC2, 0xC0, 0x01, 0xFB, 0x01, 0xC0, 0xC2, 0x10, 0x85, 0x20, 0x94];
-        private static readonly Vector128<byte>[] iter_c;
-
         /// <summary>
-        /// Обратная матрица для преобразования 16 тактов РСЛОС
+        /// Array of constants for generating round keys
+        /// </summary>
+        private static readonly Vector128<byte>[] iter_c;
+        /// <summary>
+        /// Reverse 16 round LFSR Matrix
         /// </summary>
         public static readonly byte[,] LMatrixInv;
         /// <summary>
-        /// Матрица, используемая для быстрого шифрования блоков
+        /// Mast encrypting matrix
         /// </summary>
         public static readonly Vector128<byte>[] EncExpandedTable;
+        /// <summary>
+        /// Fast inverce byte order mask
+        /// </summary>
+        public static readonly Vector128<byte> mask = Vector128.Create((byte)15, (byte)14, (byte)13, (byte)12, (byte)11, (byte)10, (byte)9, (byte)8,
+                                                (byte)7, (byte)6, (byte)5, (byte)4, (byte)3, (byte)2, (byte)1, (byte)0);
 
-        static KuzhnechicHelpFunctions()
+        static KuznechikHelpFunctions()
         {
             iter_c = new Vector128<byte>[32];
             byte[] iternum = new byte[16];

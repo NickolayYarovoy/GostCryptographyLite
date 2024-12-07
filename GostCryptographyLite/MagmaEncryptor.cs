@@ -1,20 +1,40 @@
-﻿using System;
-using System.Runtime.Intrinsics;
-using System.Security.Cryptography;
-using System.Threading.Tasks;
+﻿using System.Security.Cryptography;
 
 namespace GostCryptographyLite
 {
+    /// <summary>
+    /// A class implementing Magma encryptors
+    /// </summary>
     internal class MagmaEncryptor : ICryptoTransform
     {
+        /// <summary>
+        /// Block size in bytes
+        /// </summary>
         private const int BlockSizeBytes = 8;
-
+        /// <summary>
+        /// Cipher mode
+        /// </summary>
         private GostCipherMode GostCipherMode;
+        // <summary>
+        /// Padding mode
+        /// </summary>
         private PaddingMode paddingMode;
+        /// <summary>
+        /// The sheduled masked keys used for encrypting the data block.
+        /// </summary>
         private MagmaKeyData key;
+        /// <summary>
+        /// Current IV
+        /// </summary>
         private byte[]? iv;
+        /// <summary>
+        /// IV of clear instance
+        /// </summary>
         private byte[]? startIv;
-        
+
+        /// <summary>
+        /// OpenSSL compability mode (true - OpenSSL compability, false - GOST compability)
+        /// </summary>
         private bool OpenSslCompability;
 
         public bool CanReuseTransform => true;
@@ -28,25 +48,25 @@ namespace GostCryptographyLite
         public MagmaEncryptor(byte[] Key, byte[]? IV, GostCipherMode GostCipherMode, PaddingMode paddingMode, bool openSslCompability)
         {
             if (Key == null)
-                throw new ArgumentNullException("Ключ должен быть инициализирован");
+                throw new ArgumentNullException("The key must be initialized");
 
             if (Key.Length != 32)
-                throw new ArgumentException("Размер ключа должен быть равен 256 битам");
+                throw new ArgumentException("The key size must be 256 bit");
 
             if (GostCipherMode == GostCipherMode.CTS)
-                throw new ArgumentException("Данный режим работы не поддерживается");
+                throw new ArgumentException("The selected algorithm does not support this cipher mode.");
 
-            if (paddingMode != PaddingMode.PKCS7 && paddingMode != PaddingMode.ANSIX923)
-                throw new ArgumentException("Данный режим заполнения не поддерживается");
+            if (paddingMode != PaddingMode.PKCS7)
+                throw new ArgumentException("The selected algorithm does not support this padding mode.");
 
             iv = null;
 
             if (GostCipherMode == GostCipherMode.CBC || GostCipherMode == GostCipherMode.CFB || GostCipherMode == GostCipherMode.OFB)
             {
                 if (IV == null || IV.Length == 0)
-                    throw new ArgumentNullException("При работе в режимах CTR, CBC, OFB и CFB необходим вектор инициализации");
-                if (IV.Length % 8 != 0)
-                    throw new ArgumentNullException("Размер вектора инициализации должен быть кратен 64 битам");
+                    throw new ArgumentNullException("An initialization vector is required when operating in CTR, CBC, OFB, and CFB modes");
+                if (IV.Length % 16 != 0)
+                    throw new ArgumentNullException("The IV size must be a multiple of 64 bits");
 
                 iv = new byte[IV.Length];
                 IV.CopyTo(iv, 0);
@@ -54,14 +74,14 @@ namespace GostCryptographyLite
             if (GostCipherMode == GostCipherMode.CTR)
             {
                 if (IV == null || IV.Length == 0)
-                    throw new ArgumentNullException("При работе в режимах CTR, CBC, OFB и CFB необходим вектор инициализации");
+                    throw new ArgumentNullException("An initialization vector is required when operating in CTR, CBC, OFB, and CFB modes");
                 if (IV.Length != 4 && IV.Length != 8)
-                    throw new ArgumentNullException("Размер вектора инициализации в режиме CTR должен составлять 32 бита");
+                    throw new ArgumentNullException("The IV size must be 32 bits");
 
                 if (IV.Length == 8)
                     for (int i = 4; i < 8; i++)
                         if (IV[i] != 0)
-                            throw new ArgumentNullException("Размер вектора инициализации в режиме CTR должен составлять 32 бита");
+                            throw new ArgumentNullException("The IV size must be 32 bits");
 
                 iv = new byte[8];
 
@@ -96,6 +116,11 @@ namespace GostCryptographyLite
             this.paddingMode = paddingMode;
         }
 
+        /// <summary>
+        /// Method for encrypting a single block of data
+        /// </summary>
+        /// <param name="data">Encrypting block of data</param>
+        /// <returns>Encrypted block</returns>
         private byte[] EncryptBlock(byte[] data)
         {
             byte[] path = new byte[34];
@@ -176,7 +201,7 @@ namespace GostCryptographyLite
         public int TransformBlock(byte[] inputBuffer, int inputOffset, int inputCount, byte[] outputBuffer, int outputOffset)
         {
             if (inputCount % 8 != 0)
-                throw new ArgumentException("Длина шифруемого блока должна быть кратна 64 битам");
+                throw new ArgumentException("The input size must be a multiple of 64");
 
             byte[] block = new byte[BlockSizeBytes];
 
@@ -289,10 +314,16 @@ namespace GostCryptographyLite
             throw new Exception();
         }
 
+        /// <summary>
+        /// Empty, as unmanaged resources are not used.
+        /// </summary>
         public void Dispose()
         {
         }
 
+        /// <summary>
+        /// Clearing of key information and information about decoded blocks.
+        /// </summary>
         public void Clear()
         {
             key.Clear();
@@ -306,6 +337,11 @@ namespace GostCryptographyLite
             }
         }
 
+        /// <summary>
+        /// Reversing uint byte order
+        /// </summary>
+        /// <param name="x">Input data</param>
+        /// <returns>uint with inversed byte order</returns>
         private uint reverse(uint x)
         {
             x = ((x >> 8) & 0x00ff00ffu) | ((x & 0x00ff00ffu) << 8);

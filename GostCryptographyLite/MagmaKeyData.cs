@@ -2,13 +2,30 @@
 
 namespace GostCryptographyLite
 {
+    /// <summary>
+    /// A class that storing Magma keys
+    /// </summary>
     internal class MagmaKeyData
     {
+        /// <summary>
+        /// Scheduled masked keys
+        /// </summary>
         public UInt32[][] maskedKey;
+        /// <summary>
+        /// Key masks
+        /// </summary>
         public UInt32[][] mask;
 
+        /// <summary>
+        /// Create instance by key
+        /// </summary>
+        /// <param name="key">Input keys</param>
+        /// <exception cref="ArgumentException">Incorrect input key count</exception>
         public MagmaKeyData(UInt32[] key)
         {
+            if (key.Length != 8)
+                throw new ArgumentException("Incorrect input keys count");
+
             maskedKey = new UInt32[2][];
 
             maskedKey[0] = new UInt32[32];
@@ -40,6 +57,9 @@ namespace GostCryptographyLite
             }
         }
 
+        /// <summary>
+        /// Clear key information
+        /// </summary>
         public void Clear()
         {
             Array.Clear(maskedKey);

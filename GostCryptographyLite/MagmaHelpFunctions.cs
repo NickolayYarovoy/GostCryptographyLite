@@ -1,7 +1,13 @@
 ﻿namespace GostCryptographyLite
 {
+    /// <summary>
+    ///  Class with auxiliary functions for the Magma aglorythm
+    /// </summary>
     internal static class MagmaHelpFunctions
     {
+        /// <summary>
+        /// Permutation blocks used to avoid side-channel attacks
+        /// </summary>
         private static readonly byte[] magma_boxes;
 
         static MagmaHelpFunctions()
@@ -328,15 +334,26 @@
             }
         }
 
+        /// <summary>
+        /// Increment counter in array form
+        /// </summary>
+        /// <param name="array"></param>
         public static void FastArrayIncrement(byte[] array)
         {
             bool per = (array[7] += 1) == 0;
             for (int j = 6; j >= 0 && per; per = (array[j] += 1) == 0, j--) ;
         }
 
+        /// <summary>
+        /// Applying of a substitution that protects against side-channel attacks.
+        /// </summary>
+        /// <param name="input">Input vector</param>
+        /// <param name="i">Parameter that define the path</param>
+        /// <param name="j">Parameter that define the path</param>
+        /// <returns>Vector after aplling aof a substitution</returns>
         public static uint MagmaGostFBoxes(uint input, int i, int j)
         {
-            int baseIndex = (j << 11) | (i << 10); // Эквивалентно j * 2048 + i * 1024
+            int baseIndex = (j << 11) | (i << 10);
 
             uint output =
                 ((uint)magma_boxes[baseIndex + (3 << 8) + ((input >> 24) & 0xFF)]) << 24 |
@@ -344,7 +361,6 @@
                 ((uint)magma_boxes[baseIndex + (1 << 8) + ((input >> 8) & 0xFF)]) << 8 |
                 ((uint)magma_boxes[baseIndex + (0 << 8) + (input & 0xFF)]);
 
-            // Циклический сдвиг влево на 11 бит
             return (output << 11) | (output >> (32 - 11));
         }
     }

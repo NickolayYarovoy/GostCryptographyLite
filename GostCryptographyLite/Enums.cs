@@ -1,5 +1,8 @@
 ﻿namespace GostCryptographyLite
 {
+    /// <summary>
+    /// Types of cipher mode
+    /// </summary>
     public enum GostCipherMode
     {
         CBC = 1,
