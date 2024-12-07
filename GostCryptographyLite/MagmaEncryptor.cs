@@ -178,7 +178,7 @@ namespace GostCryptographyLite
             if (GostCipherMode == GostCipherMode.ECB || GostCipherMode == GostCipherMode.CBC)
             {
                 byte[] block = new byte[BlockSizeBytes];
-                for(int i = 0; i < inputCount; i+=BlockSizeBytes)
+                for (int i = 0; i < inputCount; i += BlockSizeBytes)
                 {
                     Array.Copy(inputBuffer, inputOffset + i, block, 0, BlockSizeBytes);
                     if (GostCipherMode == GostCipherMode.CBC)
@@ -196,6 +196,30 @@ namespace GostCryptographyLite
                     }
 
                     Array.Copy(block, 0, outputBuffer, outputOffset + i, block.Length);
+                }
+            }
+            else if (GostCipherMode == GostCipherMode.OFB || GostCipherMode == GostCipherMode.CFB)
+            {
+                byte[] block = new byte[BlockSizeBytes];
+                for (int i = 0; i < inputCount; i += BlockSizeBytes)
+                {
+                    Array.Copy(iv!, 0, block, 0, 8);
+                    Array.Copy(iv!, 8, iv!, 0, iv!.Length - 8);
+
+                    block = EncryptBlock(block);
+
+                    if(GostCipherMode == GostCipherMode.OFB)
+                        Array.Copy(block, 0, iv!, iv!.Length - 8, block.Length);
+
+                    
+                    for (int j =0; j <8;j++)
+                    {
+                        block[j] ^= inputBuffer[inputOffset + i + j];
+                    }
+                    Array.Copy(block, 0, outputBuffer, outputOffset + i, block.Length);
+
+                    if (GostCipherMode == GostCipherMode.CFB)
+                        Array.Copy(block, 0, iv!, iv.Length - 8, 8);
                 }
             }
 
