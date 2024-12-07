@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\GostKryptographyLite\GostKryptographyLite.csproj" />
+    <ProjectReference Include="..\GostCryptographyLite\GostCryptographyLite.csproj" />
   </ItemGroup>
 
   <ItemGroup>

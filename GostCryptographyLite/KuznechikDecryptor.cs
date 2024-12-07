@@ -295,8 +295,11 @@ namespace GostCryptographyLite
             byte[] res;
             if (inputCount == 0)
             {
-                if(GostCipherMode == GostCipherMode.CTR)
+                if (GostCipherMode == GostCipherMode.CTR)
+                {
+                    Array.Copy(startIv!, iv!, iv!.Length);
                     return lastBlock;
+                }
 
                 if (paddingMode == PaddingMode.PKCS7)
                 {

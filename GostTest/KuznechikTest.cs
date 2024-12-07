@@ -200,6 +200,12 @@ namespace GostTest
 
                 byte[] res = [.. output, .. last];
                 CollectionAssert.AreEqual(cipher, res);
+
+                encryptor.TransformBlock(plain, 0, 64, output, 0);
+                last = encryptor.TransformFinalBlock(plain, 0, 0);
+
+                res = [.. output, .. last];
+                CollectionAssert.AreEqual(cipher, res);
             }
         }
 
@@ -214,6 +220,13 @@ namespace GostTest
 
                 decryptor.TransformBlock(cipher, 0, cipher.Length, output, 0);
                 byte[] last = decryptor.TransformFinalBlock(cipher, 0, 0);
+
+                CollectionAssert.AreEqual(output, plain);
+
+                output = new byte[64];
+
+                decryptor.TransformBlock(cipher, 0, cipher.Length, output, 0);
+                last = decryptor.TransformFinalBlock(cipher, 0, 0);
 
                 CollectionAssert.AreEqual(output, plain);
             }
