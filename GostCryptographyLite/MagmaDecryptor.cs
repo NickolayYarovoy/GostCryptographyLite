@@ -15,7 +15,6 @@ namespace GostCryptographyLite
         private byte[]? startIv;
         private byte[] lastBlock;
         private bool isFirstBlock;
-        private int totalLenght;
 
         private bool OpenSslCompability;
 
@@ -69,8 +68,11 @@ namespace GostCryptographyLite
 
                 Array.Clear(iv!);
 
-                for (int i = 0; i < 4; i++)
-                    iv![i] = IV[i];
+                if (openSslCompability)
+                    Array.Copy(IV, iv, 4);
+                else
+                    for (int j = 0; j < 4; j++)
+                        iv[j] = IV[3 - j];
             }
 
             OpenSslCompability = openSslCompability;
@@ -96,7 +98,6 @@ namespace GostCryptographyLite
 
             lastBlock = new byte[8];
             isFirstBlock = true;
-            totalLenght = 0;
         }
 
         private byte[] DecryptBlock(byte[] data)
@@ -195,9 +196,9 @@ namespace GostCryptographyLite
                 outputOffset += BlockSizeBytes;
             }
 
+            byte[] block = new byte[BlockSizeBytes];
             if (GostCipherMode == GostCipherMode.ECB || GostCipherMode == GostCipherMode.CBC)
             {
-                byte[] block = new byte[BlockSizeBytes];
                 for (int i = 0; i < inputCount; i += BlockSizeBytes)
                 {
                     Array.Copy(inputBuffer, inputOffset + i, block, 0, BlockSizeBytes);
@@ -224,7 +225,6 @@ namespace GostCryptographyLite
             }
             else if(GostCipherMode == GostCipherMode.OFB || GostCipherMode == GostCipherMode.CFB)
             {
-                byte[] block = new byte[BlockSizeBytes];
                 for (int i = 0; i < inputCount; i += BlockSizeBytes)
                 {
                     Array.Copy(iv!, 0, block, 0, 8);
@@ -249,12 +249,23 @@ namespace GostCryptographyLite
                         Array.Copy(inputBuffer, inputOffset + i, iv!, iv.Length - 8, 8);
                 }
             }
+            else
+            {
+                for (int i = 0; i < inputCount; i += BlockSizeBytes)
+                {
+                    block = EncryptBlock(iv!);
 
-            totalLenght += inputCount;
+                    for (int j = 0; j + i < inputCount && j < 8; j++)
+                    {
+                        outputBuffer[outputOffset + j + i] = (byte)(block[j] ^ inputBuffer[inputOffset + j + i]);
+                    }
+
+                    MagmaHelpFunctions.FastArrayIncrement(iv!);
+                }
+            }
 
             if (isFirstBlock && GostCipherMode != GostCipherMode.CTR)
             {
-                totalLenght -= BlockSizeBytes;
                 isFirstBlock = false;
                 return inputCount - BlockSizeBytes;
             }
@@ -265,7 +276,6 @@ namespace GostCryptographyLite
         public byte[] TransformFinalBlock(byte[] inputBuffer, int inputOffset, int inputCount)
         {
             byte[] outputBuffer = new byte[BlockSizeBytes];
-            totalLenght = 0;
             isFirstBlock = true;
             byte[] res;
             if (inputCount == 0)
@@ -273,7 +283,7 @@ namespace GostCryptographyLite
                 if (GostCipherMode == GostCipherMode.CTR)
                 {
                     Array.Copy(startIv!, iv!, iv!.Length);
-                    return lastBlock;
+                    return [];
                 }
 
                 if (paddingMode == PaddingMode.PKCS7)
@@ -292,6 +302,18 @@ namespace GostCryptographyLite
                     return res;
                 }
                 throw new ArgumentException("Некорректный тип дополнения");
+            }
+            else if(GostCipherMode == GostCipherMode.CTR)
+            {
+                byte[] block = new byte[8];
+                block = EncryptBlock(iv!);
+                outputBuffer = new byte[inputCount];
+
+                for (int j = 0; j < inputCount && j < 8; j++)
+                {
+                    outputBuffer[j] = (byte)(block[j] ^ inputBuffer[inputOffset + j]);
+                }
+                return outputBuffer;
             }
 
             return outputBuffer;
@@ -337,7 +359,7 @@ namespace GostCryptographyLite
 
             uint n3, n4, p = 0;
 
-            if (BitConverter.IsLittleEndian ^ OpenSslCompability)
+            if (BitConverter.IsLittleEndian ^ (OpenSslCompability ||  GostCipherMode == GostCipherMode.CTR))
             {
                 n3 = BitConverter.ToUInt32(data) ^ (0xFFFFFFFF * path[1]);
                 n4 = BitConverter.ToUInt32(data, 4);

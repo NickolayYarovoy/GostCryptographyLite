@@ -67,8 +67,11 @@ namespace GostCryptographyLite
 
                 Array.Clear(iv!);
 
-                for(int i = 0; i < 4; i++)
-                    iv![i] = IV[i];
+                if (openSslCompability)
+                    Array.Copy(IV, iv, 4);
+                else
+                    for (int j = 0; j < 4; j++)
+                        iv[j] = IV[3-j];
             }
 
             OpenSslCompability = openSslCompability;
@@ -108,7 +111,7 @@ namespace GostCryptographyLite
 
             uint n3, n4, p = 0;
 
-            if (BitConverter.IsLittleEndian ^ OpenSslCompability)
+            if (BitConverter.IsLittleEndian ^ (OpenSslCompability || GostCipherMode == GostCipherMode.CTR))
             {
                 n3 = BitConverter.ToUInt32(data) ^ (0xFFFFFFFF * path[1]);
                 n4 = BitConverter.ToUInt32(data, 4);
@@ -175,9 +178,10 @@ namespace GostCryptographyLite
             if (inputCount % 8 != 0)
                 throw new ArgumentException("Длина шифруемого блока должна быть кратна 64 битам");
 
+            byte[] block = new byte[BlockSizeBytes];
+
             if (GostCipherMode == GostCipherMode.ECB || GostCipherMode == GostCipherMode.CBC)
             {
-                byte[] block = new byte[BlockSizeBytes];
                 for (int i = 0; i < inputCount; i += BlockSizeBytes)
                 {
                     Array.Copy(inputBuffer, inputOffset + i, block, 0, BlockSizeBytes);
@@ -200,7 +204,6 @@ namespace GostCryptographyLite
             }
             else if (GostCipherMode == GostCipherMode.OFB || GostCipherMode == GostCipherMode.CFB)
             {
-                byte[] block = new byte[BlockSizeBytes];
                 for (int i = 0; i < inputCount; i += BlockSizeBytes)
                 {
                     Array.Copy(iv!, 0, block, 0, 8);
@@ -222,6 +225,20 @@ namespace GostCryptographyLite
                         Array.Copy(block, 0, iv!, iv.Length - 8, 8);
                 }
             }
+            else
+            {
+                for (int i = 0; i < inputCount; i += BlockSizeBytes)
+                {
+                    block = EncryptBlock(iv!);
+
+                    for (int j = 0; j + i < inputCount && j < 8; j++)
+                    {
+                        outputBuffer[outputOffset + j + i] = (byte)(block[j] ^ inputBuffer[inputOffset + j +i]);
+                    }
+
+                    MagmaHelpFunctions.FastArrayIncrement(iv!);
+                }
+            }
 
             return inputCount;
         }
@@ -229,27 +246,45 @@ namespace GostCryptographyLite
         public byte[] TransformFinalBlock(byte[] inputBuffer, int inputOffset, int inputCount)
         {
             if (inputCount == 0 && GostCipherMode == GostCipherMode.CTR)
-                    return [];
+            {
+                iv = startIv?.ToArray();
+                return [];
+            }
             else
             {
-                byte[] res = new byte[8];
-                byte[] input = new byte[8];
-                Array.Copy(inputBuffer, inputOffset, input, 0, inputCount);
-                if (paddingMode == PaddingMode.PKCS7)
+                if (GostCipherMode != GostCipherMode.CTR)
                 {
-                    byte pad = (byte)(8 - inputCount);
-                    for (int i = inputCount; i < 8; i++)
+                    byte[] res = new byte[8];
+                    byte[] input = new byte[8];
+                    Array.Copy(inputBuffer, inputOffset, input, 0, inputCount);
+                    if (paddingMode == PaddingMode.PKCS7)
                     {
-                        input[i] = pad;
+                        byte pad = (byte)(8 - inputCount);
+                        for (int i = inputCount; i < 8; i++)
+                        {
+                            input[i] = pad;
+                        }
                     }
+                    TransformBlock(input, 0, 8, res, 0);
+                    iv = startIv?.ToArray();
+
+                    if (GostCipherMode == GostCipherMode.CTR)
+                        return res.Take(inputCount).ToArray();
+
+                    return res;
                 }
-                TransformBlock(input, 0, 8, res, 0);
-                iv = startIv?.ToArray();
+                else
+                {
+                    byte[] block = new byte[8];
+                    block = EncryptBlock(iv!);
+                    byte[] outputBuffer = new byte[inputCount];
 
-                if(GostCipherMode == GostCipherMode.CTR)
-                    return res.Take(inputCount).ToArray();
-
-                return res;
+                    for (int j = 0; j < inputCount && j < 8; j++)
+                    {
+                        outputBuffer[j] = (byte)(block[j] ^ inputBuffer[inputOffset + j]);
+                    }
+                    return outputBuffer;
+                }
             }
             throw new Exception();
         }

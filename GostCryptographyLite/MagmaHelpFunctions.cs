@@ -328,6 +328,12 @@
             }
         }
 
+        public static void FastArrayIncrement(byte[] array)
+        {
+            bool per = (array[7] += 1) == 0;
+            for (int j = 6; j >= 0 && per; per = (array[j] += 1) == 0, j--) ;
+        }
+
         public static uint MagmaGostFBoxes(uint input, int i, int j)
         {
             int baseIndex = (j << 11) | (i << 10); // Эквивалентно j * 2048 + i * 1024
