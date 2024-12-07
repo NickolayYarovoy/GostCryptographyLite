@@ -17,6 +17,8 @@ namespace GostCryptographyLite
         private byte[]? iv;
         private byte[]? startIv;
         private byte[] lastBlock;
+        private bool isFirstBlock;
+        private int totalLenght;
 
         public bool CanReuseTransform => true;
 
@@ -135,6 +137,8 @@ namespace GostCryptographyLite
             else
                 encKey = KuzhnechicHelpFunctions.ScheduleKeys(Key.Reverse().ToArray());
             lastBlock = new byte[BlockSizeBytes];
+            isFirstBlock = true;
+            totalLenght = 0;
         }
 
         public void Dispose()
@@ -163,6 +167,13 @@ namespace GostCryptographyLite
         {
             if (!(inputCount % BlockSizeBytes == 0))
                 throw new ArgumentException("Некорректный размер блока.");
+
+            if (!isFirstBlock && GostCipherMode != GostCipherMode.CTR)
+            {
+                lastBlock.CopyTo(outputBuffer, outputOffset);
+                outputOffset += BlockSizeBytes;
+            }
+
             Vector128<byte> block = Vector128.Create((byte)0);
 
             if (GostCipherMode == GostCipherMode.CTR)
@@ -205,8 +216,7 @@ namespace GostCryptographyLite
                             if (OpenSslCompability)
                                 block.CopyTo(outputBuffer, outputOffset + i);
                             else
-                                for (int j = 0; j < 16; j++)
-                                   Vector128.Shuffle(block, mask).CopyTo(outputBuffer, outputOffset + i);
+                                Vector128.Shuffle(block, mask).CopyTo(outputBuffer, outputOffset + i);
 
                             for (int j = 0; j < 16; j++)
                                 outputBuffer[outputOffset + i + j] ^= inputBuffer[i + j + inputOffset];
@@ -253,10 +263,10 @@ namespace GostCryptographyLite
                             {
                                 for (int j = 0; j < 16; j++)
                                 {
-                                    if (OpenSslCompability || i >= 32)
+                                    if (OpenSslCompability || i + totalLenght >= 32)
                                         outputBuffer[outputOffset + i + j] ^= iv![j];
                                     else
-                                        outputBuffer[outputOffset + i + j] ^= iv![15 - j];
+                                        outputBuffer[outputOffset + i + j] ^= iv![15-j];
                                 }
                             }
                         }
@@ -268,7 +278,7 @@ namespace GostCryptographyLite
                             {
                                 for (int j = 0; j < 16; j++)
                                 {
-                                    if (OpenSslCompability || i >= 32)
+                                    if (OpenSslCompability || i + totalLenght >= 32)
                                         lastBlock[j] ^= iv![j];
                                     else
                                         lastBlock[j] ^= iv![15 - j];
@@ -285,12 +295,24 @@ namespace GostCryptographyLite
                     }
                 }
             }
-            return inputCount - BlockSizeBytes;
+
+            totalLenght += inputCount;
+
+            if (isFirstBlock && GostCipherMode != GostCipherMode.CTR)
+            {
+                totalLenght -= BlockSizeBytes;
+                isFirstBlock = false;
+                return inputCount - BlockSizeBytes;
+            }
+            else
+                return inputCount;
         }
 
         public byte[] TransformFinalBlock(byte[] inputBuffer, int inputOffset, int inputCount)
         {
             byte[] outputBuffer = new byte[BlockSizeBytes];
+            totalLenght = 0;
+            isFirstBlock = true;
             Vector128<byte> block;
             byte[] res;
             if (inputCount == 0)
