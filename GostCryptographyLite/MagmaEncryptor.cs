@@ -1,4 +1,7 @@
-﻿using System.Security.Cryptography;
+﻿using System;
+using System.Runtime.Intrinsics;
+using System.Security.Cryptography;
+using System.Threading.Tasks;
 
 namespace GostCryptographyLite
 {
@@ -93,7 +96,7 @@ namespace GostCryptographyLite
         private byte[] EncryptBlock(byte[] data)
         {
             byte[] path = new byte[34];
-            uint mv = BitConverter.ToUInt32(RandomNumberGenerator.GetBytes(4));
+            uint mv = unchecked((uint)path.GetHashCode());
 
             for (int i = 1; i <= 32; i++)
             {
@@ -112,9 +115,8 @@ namespace GostCryptographyLite
             }
             else
             {
-                byte[] secData = data.Reverse().ToArray();
-                n4 = BitConverter.ToUInt32(secData, 4);
-                n3 = BitConverter.ToUInt32(secData) ^ (0xFFFFFFFF * path[1]);
+                n4 = reverse(BitConverter.ToUInt32(data));
+                n3 = reverse(BitConverter.ToUInt32(data, 4)) ^ (0xFFFFFFFF * path[1]);
             }
 
             p = n3; p -= key.mask[path[1]][7]; p += key.maskedKey[path[1]][7] + path[1]; n4 ^= MagmaHelpFunctions.MagmaGostFBoxes(p, path[2] ^ path[0], path[1]);
@@ -153,12 +155,19 @@ namespace GostCryptographyLite
             p = n3; p -= key.mask[path[31]][6]; p += key.maskedKey[path[31]][6] + path[31]; n4 ^= MagmaHelpFunctions.MagmaGostFBoxes(p, path[32] ^ path[30], path[31]);
             p = n4; p -= key.mask[path[32]][7]; p += key.maskedKey[path[32]][7] + path[32]; n3 ^= MagmaHelpFunctions.MagmaGostFBoxes(p, path[33] ^ path[31], path[32]);
 
+            byte[] res = new byte[8];
 
             if (BitConverter.IsLittleEndian ^ OpenSslCompability)
-                return [.. BitConverter.GetBytes(n4 ^ (path[32] * 0xffffffff)), ..BitConverter.GetBytes(n3)];
+            {
+                BitConverter.GetBytes(n4 ^ (path[32] * 0xffffffff)).CopyTo(res, 0);
+                BitConverter.GetBytes(n3).CopyTo(res, 4);
+            }
             else
-                return [.. BitConverter.GetBytes(n3).Reverse(), .. BitConverter.GetBytes(n4 ^ (path[32] * 0xffffffff)).Reverse()];
-
+            {
+                BitConverter.GetBytes(reverse(n3)).CopyTo(res, 0);
+                BitConverter.GetBytes(reverse(n4 ^ (path[32] * 0xffffffff))).CopyTo(res, 4);
+            }
+            return res;
         }
 
         public int TransformBlock(byte[] inputBuffer, int inputOffset, int inputCount, byte[] outputBuffer, int outputOffset)
@@ -172,7 +181,20 @@ namespace GostCryptographyLite
                 for(int i = 0; i < inputCount; i+=BlockSizeBytes)
                 {
                     Array.Copy(inputBuffer, inputOffset + i, block, 0, BlockSizeBytes);
+                    if (GostCipherMode == GostCipherMode.CBC)
+                    {
+                        for (int j = 0; j < BlockSizeBytes; j++)
+                            block[j] ^= iv![j];
+                    }
+
                     block = EncryptBlock(block);
+
+                    if (GostCipherMode == GostCipherMode.CBC)
+                    {
+                        Array.Copy(iv!, 8, iv!, 0, iv!.Length - 8);
+                        Array.Copy(block, 0, iv!, iv!.Length - 8, block.Length);
+                    }
+
                     Array.Copy(block, 0, outputBuffer, outputOffset + i, block.Length);
                 }
             }
@@ -182,20 +204,34 @@ namespace GostCryptographyLite
 
         public byte[] TransformFinalBlock(byte[] inputBuffer, int inputOffset, int inputCount)
         {
-            /*if (inputCount == 0 && GostCipherMode == GostCipherMode.CTR)
+            if (inputCount == 0 && GostCipherMode == GostCipherMode.CTR)
                     return [];
             else
             {
-                byte[] block = [..inputBuffer.Take(inputCount)], ..Enumerable.Repeat()];
-                TransformBlock(block, 0, 8, block, 0);
-                return block;
-            }*/
+                byte[] res = new byte[8];
+                byte[] input = new byte[8];
+                Array.Copy(inputBuffer, inputOffset, input, 0, inputCount);
+                if (paddingMode == PaddingMode.PKCS7)
+                {
+                    byte pad = (byte)(8 - inputCount);
+                    for (int i = inputCount; i < 8; i++)
+                    {
+                        input[i] = pad;
+                    }
+                }
+                TransformBlock(input, 0, 8, res, 0);
+                iv = startIv?.ToArray();
+
+                if(GostCipherMode == GostCipherMode.CTR)
+                    return res.Take(inputCount).ToArray();
+
+                return res;
+            }
             throw new Exception();
         }
 
         public void Dispose()
         {
-            throw new NotImplementedException();
         }
 
         public void Clear()
@@ -209,6 +245,13 @@ namespace GostCryptographyLite
                 iv = null;
                 startIv = null;
             }
+        }
+
+        private uint reverse(uint x)
+        {
+            x = ((x >> 8) & 0x00ff00ffu) | ((x & 0x00ff00ffu) << 8);
+            x = ((x >> 16) & 0xffffu) | ((x & 0xffffu) << 16);
+            return x;
         }
     }
 }

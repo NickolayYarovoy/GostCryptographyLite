@@ -310,17 +310,36 @@
             ]
         ];
 
-            magma_boxes = temp.SelectMany(x => x.SelectMany(y => y.SelectMany(z => z))).ToArray();
+            magma_boxes = new byte[2 * 2 * 4 * 256];
+
+            int index = 0;
+            for (int j = 0; j < 2; j++)
+            {
+                for (int i = 0; i < 2; i++)
+                {
+                    for (int k = 0; k < 4; k++)
+                    {
+                        for (int b = 0; b < 256; b++)
+                        {
+                            magma_boxes[index++] = temp[j][i][k][b];
+                        }
+                    }
+                }
+            }
         }
 
         public static uint MagmaGostFBoxes(uint input, int i, int j)
         {
-            input = ((uint)magma_boxes[j * 2048 + i * 1024 + 3 * 256 + ((input >> 24) & 255)]) << 24 |
-                   ((uint)magma_boxes[j * 2048 + i * 1024 + 2 * 256 + ((input >> 16) & 255)]) << 16 |
-                   ((uint)magma_boxes[j * 2048 + i * 1024 + 1 * 256 + ((input >> 8) & 255)]) << 8 |
-                   ((uint)magma_boxes[j * 2048 + i * 1024 + 0 * 256 + (input & 255)]);
+            int baseIndex = (j << 11) | (i << 10); // Эквивалентно j * 2048 + i * 1024
 
-            return (input << 11) | (input >> 21);
+            uint output =
+                ((uint)magma_boxes[baseIndex + (3 << 8) + ((input >> 24) & 0xFF)]) << 24 |
+                ((uint)magma_boxes[baseIndex + (2 << 8) + ((input >> 16) & 0xFF)]) << 16 |
+                ((uint)magma_boxes[baseIndex + (1 << 8) + ((input >> 8) & 0xFF)]) << 8 |
+                ((uint)magma_boxes[baseIndex + (0 << 8) + (input & 0xFF)]);
+
+            // Циклический сдвиг влево на 11 бит
+            return (output << 11) | (output >> (32 - 11));
         }
     }
 }
